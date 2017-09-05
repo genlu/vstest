@@ -341,6 +341,9 @@ namespace Microsoft.VisualStudio.TestPlatform.ObjectModel
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2104:DoNotDeclareReadOnlyMutableReferenceTypes")]
         public static readonly TestProperty LineNumber = TestProperty.Register("TestCase.LineNumber", LineNumberLabel, typeof(int), TestPropertyAttributes.Hidden, typeof(TestCase));
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2104:DoNotDeclareReadOnlyMutableReferenceTypes")]
+        public static readonly TestProperty ExecuteByName = TestProperty.Register("TestCase.ExecuteByName", "Execute By Name", typeof(bool), TestPropertyAttributes.None, typeof(TestCase));
+
         internal static TestProperty[] Properties { get; } =
         {
             CodeFilePath,

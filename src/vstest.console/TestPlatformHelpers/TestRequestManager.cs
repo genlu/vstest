@@ -24,6 +24,7 @@ namespace Microsoft.VisualStudio.TestPlatform.CommandLine.TestPlatformHelpers
     using Microsoft.VisualStudio.TestPlatform.ObjectModel.Client.Interfaces;
     using Microsoft.VisualStudio.TestPlatform.ObjectModel.Utilities;
     using Microsoft.VisualStudio.TestPlatform.Utilities;
+    using System.Text;
 
     /// <summary>
     /// Defines the TestRequestManger which can fire off discovery and test run requests
@@ -209,6 +210,7 @@ namespace Microsoft.VisualStudio.TestPlatform.CommandLine.TestPlatformHelpers
                 runsettings = updatedRunsettings;
             }
 
+            bool success = true;
             if (testRunRequestPayload.Sources != null && testRunRequestPayload.Sources.Any())
             {
                 runCriteria = new TestRunCriteria(
@@ -219,22 +221,91 @@ namespace Microsoft.VisualStudio.TestPlatform.CommandLine.TestPlatformHelpers
                                   this.commandLineOptions.TestStatsEventTimeout,
                                   testHostLauncher);
                 runCriteria.TestCaseFilter = this.commandLineOptions.TestCaseFilterValue;
+                success = this.RunTests(runCriteria, testRunEventsRegistrar, protocolConfig);
             }
             else
             {
-                runCriteria = new TestRunCriteria(
-                                  testRunRequestPayload.TestCases,
-                                  batchSize,
-                                  testRunRequestPayload.KeepAlive,
-                                  runsettings,
-                                  this.commandLineOptions.TestStatsEventTimeout,
-                                  testHostLauncher);
+                System.Diagnostics.Debugger.Launch();
+                GroupTests(testRunRequestPayload.TestCases, out var tests, out var sources, out var filter);
+
+                if (tests.Count > 0)
+                {
+                    runCriteria = new TestRunCriteria(
+                                      tests,
+                                      batchSize,
+                                      testRunRequestPayload.KeepAlive,
+                                      runsettings,
+                                      this.commandLineOptions.TestStatsEventTimeout,
+                                      testHostLauncher);
+
+                    success = success && this.RunTests(runCriteria, testRunEventsRegistrar, protocolConfig);
+                }
+
+                if (sources != null && sources.Count > 0)
+                {
+                    runCriteria = new TestRunCriteria(
+                                      sources,
+                                      batchSize,
+                                      testRunRequestPayload.KeepAlive,
+                                      runsettings,
+                                      this.commandLineOptions.TestStatsEventTimeout,
+                                      testHostLauncher);
+                    runCriteria.TestCaseFilter = filter;
+
+                    success = success && this.RunTests(runCriteria, testRunEventsRegistrar, protocolConfig);
+                }
             }
 
-            var success = this.RunTests(runCriteria, testRunEventsRegistrar, protocolConfig);
             EqtTrace.Info("TestRequestManager.RunTests: run tests completed, sucessful: {0}.", success);
             this.testPlatformEventSource.ExecutionRequestStop();
             return success;
+        }
+
+        private void GroupTests(List<TestCase> testCases, out List<TestCase> runByTestTests, out List<string> runByNameSources, out string RunByNameFilter)
+        {
+            const string filterClause = "FullyQualifiedName=";
+            const string filterOr = "|";
+
+            var byTest = new List<TestCase>();
+            var byName = new List<TestCase>();
+
+
+            foreach (var testCase in testCases)
+            {
+                if (ExecuteThisTestByName(testCase))
+                {
+                    byName.Add(testCase);
+                }
+                else
+                {
+                    byTest.Add(testCase);
+                }
+            }
+
+            HashSet<string> sources = new HashSet<string>();
+            StringBuilder filterBuilder = new StringBuilder();
+
+            foreach (var testCase in byName)
+            {
+                sources.Add(testCase.Source);
+                filterBuilder.Append(filterClause);
+                filterBuilder.Append(testCase.FullyQualifiedName);
+                filterBuilder.Append(filterOr);
+            }
+
+            runByTestTests = byTest;
+
+            if (sources.Count == 0)
+            {
+                runByNameSources = null;
+                RunByNameFilter = null;
+            }
+            else
+            {
+                runByNameSources = sources.ToList();
+                filterBuilder.Remove(filterBuilder.Length - 1, 1);
+                RunByNameFilter = filterBuilder.ToString();
+            }
         }
 
         /// <summary>
@@ -260,6 +331,12 @@ namespace Microsoft.VisualStudio.TestPlatform.CommandLine.TestPlatformHelpers
         }
 
         #endregion
+
+        private bool ExecuteThisTestByName(TestCase testCase)
+        {
+            //return testCase.FullyQualifiedName.EndsWith("1") ? true : false;
+            return testCase.GetPropertyValue(TestCaseProperties.ExecuteByName, false);
+        }
 
         private bool UpdateRunSettingsIfRequired(string runsettingsXml, out string updatedRunSettingsXml)
         {
