@@ -101,19 +101,26 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
         {
             ValidateArg.NotNull(propertyValueProvider, "propertyValueProvider");
             var result = false;
-            var multiValue = this.GetPropertyValue(propertyValueProvider);
+            var hasValue = TryGetPropertyValue(propertyValueProvider, out var singleValue, out var multiValue);
             switch (this.Operation)
             {
                 case Operation.Equal:
-                    // if any value in multi-valued property matches 'this.Value', for Equal to evaluate true.
-                    if (null != multiValue)
+                    if (hasValue)
                     {
-                        foreach (string propertyValue in multiValue)
+                        if (singleValue != null)
                         {
-                            result = result || string.Equals(propertyValue, Value, StringComparison.OrdinalIgnoreCase);
-                            if (result)
+                            result = string.Equals(singleValue, Value, StringComparison.OrdinalIgnoreCase);
+                        }
+                        else
+                        {
+                            // if any value in multi-valued property matches 'this.Value', for Equal to evaluate true.
+                            foreach (string propertyValue in multiValue)
                             {
-                                break;
+                                result = result || string.Equals(propertyValue, Value, StringComparison.OrdinalIgnoreCase);
+                                if (result)
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -125,14 +132,21 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
                     result = true; 
                     
                     // if value is null.
-                    if (null != multiValue)
+                    if (hasValue)
                     {
-                        foreach (string propertyValue in multiValue)
+                        if (singleValue != null)
                         {
-                            result = result && !string.Equals(propertyValue, Value, StringComparison.OrdinalIgnoreCase);
-                            if (!result)
+                            result = !string.Equals(singleValue, Value, StringComparison.OrdinalIgnoreCase);
+                        }
+                        else
+                        {
+                            foreach (string propertyValue in multiValue)
                             {
-                                break;
+                                result = result && !string.Equals(propertyValue, Value, StringComparison.OrdinalIgnoreCase);
+                                if (!result)
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -140,15 +154,22 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
 
                 case Operation.Contains:
                     // if any value in mulit-valued property contains 'this.Value' for 'Contains' to be true.
-                    if (null != multiValue)
+                    if (hasValue)
                     {
-                        foreach (string propertyValue in multiValue)
+                        if (singleValue != null)
                         {
-                            Debug.Assert(null != propertyValue, "PropertyValue can not be null.");
-                            result = result || propertyValue.IndexOf(Value, StringComparison.OrdinalIgnoreCase) != -1;
-                            if (result)
+                            result = singleValue.IndexOf(Value, StringComparison.OrdinalIgnoreCase) != -1;
+                        }
+                        else
+                        {
+                            foreach (string propertyValue in multiValue)
                             {
-                                break;
+                                Debug.Assert(null != propertyValue, "PropertyValue can not be null.");
+                                result = result || propertyValue.IndexOf(Value, StringComparison.OrdinalIgnoreCase) != -1;
+                                if (result)
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -266,21 +287,19 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
         /// <summary>
         /// Returns property value for Property using propertValueProvider.
         /// </summary>
-        private string[] GetPropertyValue(Func<string, Object> propertyValueProvider)
+        private bool TryGetPropertyValue(Func<string, Object> propertyValueProvider, out string singleValue, out string[] multiValue)
         {
             var propertyValue = propertyValueProvider(this.Name);
             if (null != propertyValue)
             {
-                var multiValue = propertyValue as string[];
-                if (null == multiValue)
-                {
-                    multiValue = new string[1];
-                    multiValue[0] = propertyValue.ToString();
-                }
-                return multiValue;
+                singleValue = propertyValue as string;
+                multiValue = singleValue != null ? null : propertyValue as string[];
+                return true;
             }
 
-            return null;
+            singleValue = null;
+            multiValue = null;
+            return false;
         }
 
     }

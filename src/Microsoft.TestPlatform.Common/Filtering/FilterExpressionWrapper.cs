@@ -5,6 +5,7 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
 
     using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 
@@ -59,12 +60,17 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
         /// </summary>
         public string[] ValidForProperties(IEnumerable<String> supportedProperties, Func<string, TestProperty> propertyProvider)
         {
-            string[] invalidProperties = null;
+            var invalidProperties = new List<string>();
             if (null != this.filterExpression)
             {
-                invalidProperties = this.filterExpression.ValidForProperties(supportedProperties, propertyProvider);
+                if (supportedProperties == null)
+                {
+                    // if null, initialize to empty list so that invalid properties can be found.
+                    supportedProperties = Enumerable.Empty<string>();
+                }
+                this.filterExpression.ValidForProperties(supportedProperties, propertyProvider, invalidProperties);
             }
-            return invalidProperties;
+            return invalidProperties.Count == 0 ? null : invalidProperties.ToArray();
         }
         
         /// <summary>

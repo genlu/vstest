@@ -159,39 +159,29 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
         /// True, if filter is valid for given set of properties.
         /// When False, invalidProperties would contain properties making filter invalid.
         /// </summary>
-        internal string[] ValidForProperties(IEnumerable<string> properties, Func<string, TestProperty> propertyProvider)
+        internal void ValidForProperties(IEnumerable<string> properties, Func<string, TestProperty> propertyProvider, List<string> invalidProperties)
         {
-            string[] invalidProperties = null;
+            var parents = new Stack<FilterExpression>();
+            DesendLeft(this);
 
-            if (null == properties)
+            while (parents.Count > 0)
             {
-                // if null, initialize to empty list so that invalid properties can be found.
-                properties = new List<string>();
-            }
+                DesendLeft(parents.Pop().right);
+            }    
+                
+            void DesendLeft(FilterExpression exp)
+            {
+                while (exp.condition == null)
+                {
+                    parents.Push(exp);
+                    exp = exp.left;
+                }
 
-            bool valid = false;
-            if (this.condition != null)
-            {
-                valid = this.condition.ValidForProperties(properties, propertyProvider);
-                if (!valid)
+                if (!exp.condition.ValidForProperties(properties, propertyProvider))
                 {
-                    invalidProperties = new string[1] { this.condition.Name };
+                    invalidProperties.Add(exp.condition.Name);
                 }
             }
-            else
-            {
-                invalidProperties = this.left.ValidForProperties(properties, propertyProvider);
-                var invalidRight = this.right.ValidForProperties(properties, propertyProvider);
-                if (null == invalidProperties)
-                {
-                    invalidProperties = invalidRight;
-                }
-                else if (null != invalidRight)
-                {
-                    invalidProperties = invalidProperties.Concat(invalidRight).ToArray();
-                }
-            }
-            return invalidProperties;
         }
 
 
@@ -306,29 +296,43 @@ namespace Microsoft.VisualStudio.TestPlatform.Common.Filtering
         /// <returns> True if evaluation is successful. </returns>
         internal bool Evaluate(Func<string, Object> propertyValueProvider)
         {
-            ValidateArg.NotNull(propertyValueProvider, "propertyValueProvider");
+            
+            var stack = new Stack<object>();
 
-            Debug.Assert(!this.IsEmpty, "Filter expression is empty.");
-            bool filterResult = false;
-            if (null != this.condition)
+            DesendLeft(this);           
+
+            while (stack.Count > 1)
             {
-                filterResult = this.condition.Evaluate(propertyValueProvider);
+                var leftExp = stack.Pop();
+                var logicalExp = (FilterExpression)stack.Pop();
+                var rightExp = logicalExp.right;
+
+                stack.Push(logicalExp);
+                stack.Push(leftExp);
+
+                DesendLeft(rightExp);
+
+                if (rightExp.condition != null)
+                {
+                    var rightValue = (bool)stack.Pop();
+                    var leftValue = (bool)stack.Pop();
+                    var isAndOperation = ((FilterExpression)stack.Pop()).areJoinedByAnd;
+                    stack.Push(isAndOperation ? leftValue && rightValue : leftValue || rightValue);
+                }
             }
-            else
+
+            return (bool)stack.Pop();
+            
+            void DesendLeft(FilterExpression exp)
             {
-                // & or | operator
-                bool leftResult = this.left.Evaluate(propertyValueProvider);
-                bool rightResult = this.right.Evaluate(propertyValueProvider);
-                if (this.areJoinedByAnd)
+                while (exp.condition == null)
                 {
-                    filterResult = leftResult && rightResult;
+                    stack.Push(exp);
+                    exp = exp.left;
                 }
-                else
-                {
-                    filterResult = leftResult || rightResult;
-                }
+                stack.Push(exp.condition.Evaluate(propertyValueProvider));
             }
-            return filterResult;
-        }
+            
+        }        
     }
 }
